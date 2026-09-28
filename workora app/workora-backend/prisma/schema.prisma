@@ -1,0 +1,327 @@
+// WORKORA — Prisma schema
+// Local dev uses SQLite (zero-config). For production, switch the datasource
+// to postgresql and point DATABASE_URL at a real Postgres instance
+// (Render/Railway/Supabase/Neon all work) — no other code changes needed.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // change to "postgresql" for production
+  url      = env("DATABASE_URL")
+}
+
+model PortfolioQuery {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String? // null for Google-only accounts
+  googleId      String?   @unique
+  role          String    @default("JOB_SEEKER")
+  emailVerified Boolean   @default(false)
+  phone         String?
+  phoneVerified Boolean   @default(false)
+  isBlocked     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  lastLoginAt   DateTime?
+
+  jobSeekerProfile JobSeekerProfile?
+  employer         Employer?
+  notifications    Notification[]
+  refreshTokens    RefreshToken[]
+  jobAlerts        JobAlert[]
+  reportsMade      Report[]          @relation("ReporterUser")
+  preferences      UserPreference?
+  resetTokens      PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model UserPreference {
+  id                    String  @id @default(cuid())
+  userId                String  @unique
+  user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locationEnabled       Boolean @default(false)
+  notificationsEnabled  Boolean @default(true)
+  emailAlertsEnabled    Boolean @default(true)
+}
+
+model JobSeekerProfile {
+  id                  String            @id @default(cuid())
+  userId              String            @unique
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName            String?
+  headline            String?
+  photoUrl            String?
+  about               String?
+  city                String?
+  area                String?
+  latitude            Float?
+  longitude           Float?
+  languages           String? // comma-separated
+  expectedSalaryMin   Int?
+  expectedSalaryMax   Int?
+  preferredJobType    String?
+  preferredWorkMode   String?
+  preferredLocation   String?
+  visibility          String @default("PUBLIC")
+  primaryResumeId     String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  skills       SkillOnProfile[]
+  experience   Experience[]
+  education    Education[]
+  resumes      Resume[]
+  savedJobs    SavedJob[]
+  applications Application[]
+  shortlists   CandidateShortlist[]
+}
+
+model Experience {
+  id                 String           @id @default(cuid())
+  jobSeekerProfileId String
+  profile            JobSeekerProfile @relation(fields: [jobSeekerProfileId], references: [id], onDelete: Cascade)
+  role               String
+  company            String
+  startDate          String
+  endDate            String?
+  current            Boolean          @default(false)
+  description        String?
+}
+
+model Education {
+  id                 String           @id @default(cuid())
+  jobSeekerProfileId String
+  profile            JobSeekerProfile @relation(fields: [jobSeekerProfileId], references: [id], onDelete: Cascade)
+  degree             String
+  school             String
+  startYear          Int?
+  endYear            Int?
+}
+
+model Skill {
+  id      String            @id @default(cuid())
+  name    String            @unique
+  onJobs  SkillOnJob[]
+  onProfiles SkillOnProfile[]
+}
+
+model SkillOnProfile {
+  id                 String           @id @default(cuid())
+  jobSeekerProfileId String
+  profile            JobSeekerProfile @relation(fields: [jobSeekerProfileId], references: [id], onDelete: Cascade)
+  skillId            String
+  skill              Skill            @relation(fields: [skillId], references: [id])
+
+  @@unique([jobSeekerProfileId, skillId])
+}
+
+model SkillOnJob {
+  id      String @id @default(cuid())
+  jobId   String
+  job     Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skillId String
+  skill   Skill  @relation(fields: [skillId], references: [id])
+
+  @@unique([jobId, skillId])
+}
+
+model Resume {
+  id                 String           @id @default(cuid())
+  jobSeekerProfileId String
+  profile            JobSeekerProfile @relation(fields: [jobSeekerProfileId], references: [id], onDelete: Cascade)
+  fileName           String
+  storedPath         String
+  mimeType           String
+  sizeBytes          Int
+  isPrimary          Boolean          @default(false)
+  uploadedAt         DateTime         @default(now())
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  logoUrl     String?
+  website     String?
+  industry    String?
+  description String?
+  size        String?
+  city        String?
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  employers Employer[]
+  jobs      Job[]
+}
+
+model Employer {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName    String?
+  designation String?
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id])
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  jobs       Job[]
+  shortlists CandidateShortlist[]
+}
+
+model JobCategory {
+  id   String @id @default(cuid())
+  name String @unique
+  jobs Job[]
+}
+
+model Job {
+  id                  String      @id @default(cuid())
+  employerId          String
+  employer            Employer    @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  companyId           String
+  company             Company     @relation(fields: [companyId], references: [id])
+  categoryId          String
+  category            JobCategory @relation(fields: [categoryId], references: [id])
+
+  title               String
+  description         String
+  responsibilities    String // newline-separated
+  requirements        String // newline-separated
+  benefits            String // newline-separated
+
+  city                String
+  area                String?
+  latitude            Float?
+  longitude           Float?
+
+  salaryMin           Int?
+  salaryMax           Int?
+  jobType             String
+  workMode            String
+  experienceLevel     String
+  educationRequired   String
+  vacancies           Int         @default(1)
+  genderPreference    String? // null = no preference; only set when legally justified
+
+  status              String      @default("PENDING")
+  isDuplicateFlag     Boolean     @default(false)
+  applicationDeadline DateTime?
+  postedAt            DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  skills       SkillOnJob[]
+  applications Application[]
+  savedBy      SavedJob[]
+  reports      Report[]
+  shortlists   CandidateShortlist[]
+}
+
+model Application {
+  id                 String            @id @default(cuid())
+  jobId              String
+  job                Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobSeekerProfileId String
+  profile            JobSeekerProfile  @relation(fields: [jobSeekerProfileId], references: [id], onDelete: Cascade)
+  resumeId           String?
+  coverMessage        String?
+  contactPhone       String?
+  contactEmail       String?
+  status             String            @default("APPLIED")
+  appliedAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@unique([jobId, jobSeekerProfileId])
+}
+
+model SavedJob {
+  id                 String           @id @default(cuid())
+  jobId              String
+  job                Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobSeekerProfileId String
+  profile            JobSeekerProfile @relation(fields: [jobSeekerProfileId], references: [id], onDelete: Cascade)
+  savedAt            DateTime         @default(now())
+
+  @@unique([jobId, jobSeekerProfileId])
+}
+
+model CandidateShortlist {
+  id                 String           @id @default(cuid())
+  employerId         String
+  employer           Employer         @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  jobId              String
+  job                Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobSeekerProfileId String
+  profile            JobSeekerProfile @relation(fields: [jobSeekerProfileId], references: [id], onDelete: Cascade)
+  note               String?
+  createdAt          DateTime         @default(now())
+
+  @@unique([employerId, jobId, jobSeekerProfileId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model JobAlert {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String?
+  category   String?
+  city       String?
+  distanceKm Int?
+  salaryMin  Int?
+  jobType    String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model Report {
+  id         String           @id @default(cuid())
+  reporterId String
+  reporter   User             @relation("ReporterUser", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType String
+  targetId   String
+  jobId      String?
+  job        Job?             @relation(fields: [jobId], references: [id])
+  reason     String
+  status     String           @default("OPEN")
+  createdAt  DateTime         @default(now())
+}
